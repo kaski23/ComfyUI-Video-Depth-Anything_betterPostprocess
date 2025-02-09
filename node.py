@@ -13,7 +13,7 @@ from .video_depth_anything.video_depth import VideoDepthAnything
 def ensure_even(value):
     return value if value % 2 == 0 else value + 1
 
-def preprocess(tensor, target_fps=-1, max_res=-1):
+def preprocess(tensor, max_res=-1):
     # Convert from float [0,1] to uint8 [0,255]
     frames = (tensor.numpy() * 255).astype(np.uint8)
     
@@ -31,10 +31,7 @@ def preprocess(tensor, target_fps=-1, max_res=-1):
             resized_frames.append(frame)
         frames = np.array(resized_frames)
     
-    # Default fps as 1:1 mapping if not specified
-    fps = target_fps if target_fps > 0 else len(frames)
-    
-    return frames, fps
+    return frames
 
 def postprocess_inferno(depths):
     colormap = np.array(cm.get_cmap("inferno").colors)
@@ -69,7 +66,7 @@ class LoadVideoDepthAnythingModel:
     def INPUT_TYPES(s):
         return {
             "required": {
-                "model": (['video_depth_anything_vits.pth', 'video_depth_anything_vitl.pth'], {"default": 'video_depth_anything_vits.safetensors'}),
+                "model": (['video_depth_anything_vits.pth', 'video_depth_anything_vitl.pth'], {"default": 'video_depth_anything_vits.safetensors'})
             },
         }
 
@@ -123,25 +120,27 @@ class VideoDepthAnythingProcess:
         return {"required": {
                     "vda_model": ("VDAMODEL", ),
                     "images": ("IMAGE", ),
-                    "target_fps": ("FLOAT", {"default": 15}),
                     "input_size": ("INT",{"default": 518}),
                     "max_res": ("INT",{"default": 1280}),
+                    "precision": (['fp16', 'fp32'], {"default": 'fp16'}),
                     "colormap": (['inferno', 'gray'], {"default": 'gray'}),
             },
         }
     
-    RETURN_TYPES = ("IMAGE", "FLOAT",)
-    RETURN_NAMES =("image", "fps", )
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES =("image", )
     FUNCTION = "process"
     CATEGORY = "VideoDepthAnything"
 
-    def process(self, vda_model, images, target_fps, input_size, max_res, colormap):
+    def process(self, vda_model, images, input_size, max_res, precision, colormap):
         device = mm.get_torch_device()
         offload_device = mm.unet_offload_device()
         vda_model.to(device)
         pbar = ProgressBar(images.shape[0])
-        images_np,fps = preprocess(images, target_fps, max_res)
-        depths, fps = vda_model.infer_video_depth(images_np, target_fps=target_fps, input_size=input_size, device=device, pbar=pbar)
+
+        images_np = preprocess(images, max_res)
+
+        depths = vda_model.infer_video_depth(images_np, input_size=input_size, device=device, pbar=pbar, fp32= True if precision == 'fp32' else False)
 
         vda_model.to(offload_device)
 
@@ -149,4 +148,5 @@ class VideoDepthAnythingProcess:
             output = postprocess_inferno(depths)
         else:
             output = postprocess_gray(depths)
-        return (output,fps, )
+
+        return (output, )

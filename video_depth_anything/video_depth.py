@@ -55,16 +55,16 @@ class VideoDepthAnything(nn.Module):
 
         self.head = DPTHeadTemporal(self.pretrained.embed_dim, features, use_bn, out_channels=out_channels, use_clstoken=use_clstoken, num_frames=num_frames, pe=pe)
 
-    def forward(self, x):
+    def forward(self, x, device):
         B, T, C, H, W = x.shape
         patch_h, patch_w = H // 14, W // 14
         features = self.pretrained.get_intermediate_layers(x.flatten(0,1), self.intermediate_layer_idx[self.encoder], return_class_token=True)
-        depth = self.head(features, patch_h, patch_w, T)
+        depth = self.head(features, patch_h, patch_w, T, device)
         depth = F.interpolate(depth, size=(H, W), mode="bilinear", align_corners=True)
         depth = F.relu(depth)
         return depth.squeeze(1).unflatten(0, (B, T)) # return shape [B, T, H, W]
     
-    def infer_video_depth(self, frames, target_fps, input_size=518, device='cuda', pbar=None):
+    def infer_video_depth(self, frames, input_size=518, device='cuda', fp32=False, pbar=None):
         frame_height, frame_width = frames[0].shape[:2]
         ratio = max(frame_height, frame_width) / min(frame_height, frame_width)
         if ratio > 1.78:  # we recommend to process video with ratio smaller than 16:9 due to memory limitation
@@ -102,8 +102,10 @@ class VideoDepthAnything(nn.Module):
                 cur_input[:, :OVERLAP, ...] = pre_input[:, KEYFRAMES, ...]
 
             with torch.no_grad():
-                depth = self.forward(cur_input) # depth shape: [1, T, H, W]
+                with torch.autocast(device_type=device.type, enabled=(not fp32)):
+                    depth = self.forward(cur_input, device.type) # depth shape: [1, T, H, W]
 
+            depth = depth.to(cur_input.dtype)
             depth = F.interpolate(depth.flatten(0,1).unsqueeze(1), size=(frame_height, frame_width), mode='bilinear', align_corners=True)
             depth_list += [depth[i][0].cpu().numpy() for i in range(depth.shape[0])]
 
@@ -151,5 +153,4 @@ class VideoDepthAnything(nn.Module):
             
         depth_list = depth_list_aligned
             
-        return np.stack(depth_list[:org_video_len], axis=0), target_fps
-        
+        return np.stack(depth_list[:org_video_len], axis=0)
