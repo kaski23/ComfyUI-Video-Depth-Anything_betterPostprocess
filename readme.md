@@ -33,6 +33,10 @@ pip install xformers
 ## Note
 - The large model doesn't work with 24GB vram
 
+## Changelog
+**9 February 2025**
+- Support autocast inference, minor cleanups
+
 
 ## Citation
 
