@@ -39,8 +39,8 @@ def postprocess_inferno(depths):
     depth_frames = []
     for i in range(depths.shape[0]):
         depth = depths[i]
-        depth_norm = ((depth - d_min) / (d_max - d_min) * 65535).astype(np.uint16)
-        depth_vis = (colormap[depth_norm] * 65535).astype(np.uint16)
+        depth_norm = ((depth - d_min) / (d_max - d_min) * 255).astype(np.uint8)
+        depth_vis = (colormap[depth_norm] * 255).astype(np.uint8)
         depth_frames.append(depth_vis)
     return torch.from_numpy(np.array(depth_frames).astype(np.float32) / 255.0)
 
